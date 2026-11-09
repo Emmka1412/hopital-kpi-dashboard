@@ -1,0 +1,9 @@
+services:
+  pipeline:
+    build: .
+    volumes:
+      - ./data:/app/data
+      - ./reports:/app/reports
+  tests:
+    build: .
+    command: ["python", "-m", "pytest", "-q"]

@@ -1,0 +1,10 @@
+source,regle,nombre,traitement
+services,"ligne_hors_service (total, vide)",1,ignorée
+admissions,doublon_id_adm,602,supprimé (première occurrence conservée)
+admissions,date_sortie_manquante,905,conservé (exclu des durées de séjour)
+admissions,date_sortie_avant_entree,314,rejeté (quarantaine)
+admissions,service_inconnu,66,rejeté (quarantaine)
+admissions,age_manquant,301,conservé (âge vide)
+admissions,age_aberrant (hors 0-110),151,valeur vidée
+consultations,doublon_rdv_id,730,supprimé (première occurrence conservée)
+consultations,duree_honoree_manquante_ou_negative,812,valeur vidée

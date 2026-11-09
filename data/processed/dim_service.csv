@@ -1,0 +1,9 @@
+code_service,libelle,pole,lits
+CAR,Cardiologie,Médecine,30
+CHI,Chirurgie,Chirurgie,36
+MAT,Maternité,Mère-enfant,28
+MIN,Médecine interne,Médecine,32
+PED,Pédiatrie,Mère-enfant,24
+RAD,Radiologie,Plateau technique,0
+REA,Réanimation,Urgences et soins critiques,12
+URG,Urgences,Urgences et soins critiques,20

@@ -1,0 +1,56 @@
+// =====================================================================
+// Mesures DAX - à créer dans une table dédiée "_Mesures" (Saisir des données > table vide)
+// Modèle attendu : voir GUIDE.md (schéma en étoile, dim_date marquée "table de dates")
+// =====================================================================
+
+// ---------- Activité d'hospitalisation ----------
+Admissions = COUNTROWS ( fact_admission )
+
+Séjours terminés =
+CALCULATE ( COUNTROWS ( fact_admission ), NOT ISBLANK ( fact_admission[date_sortie] ) )
+
+DMS (jours) = AVERAGE ( fact_admission[duree_sejour_j] )
+
+Part entrées par les urgences =
+DIVIDE (
+    CALCULATE ( COUNTROWS ( fact_admission ), fact_admission[mode_entree] = "Urgences" ),
+    [Admissions]
+)
+
+Décès =
+CALCULATE ( COUNTROWS ( fact_admission ), fact_admission[mode_sortie] = "Décès" )
+
+// Occupation : calculée à partir de la table mensuelle (jours-lits déjà ventilés par mois)
+Taux d'occupation =
+DIVIDE (
+    SUM ( kpi_monthly_service[jours_lit_occupes] ),
+    SUM ( kpi_monthly_service[jours_lit_disponibles] )
+)
+
+// ---------- Consultations ----------
+Rendez-vous = COUNTROWS ( fact_consultation )
+
+Rendez-vous honorés =
+CALCULATE ( [Rendez-vous], fact_consultation[statut] = "Honoré" )
+
+Taux d'absence =
+DIVIDE ( CALCULATE ( [Rendez-vous], fact_consultation[statut] = "Absent" ), [Rendez-vous] )
+
+Durée moyenne de consultation (min) = AVERAGE ( fact_consultation[duree_min] )
+
+// ---------- Comparaisons temporelles (nécessitent dim_date marquée comme table de dates) ----------
+Admissions N-1 =
+CALCULATE ( [Admissions], SAMEPERIODLASTYEAR ( dim_date[date] ) )
+
+Évolution admissions vs N-1 =
+DIVIDE ( [Admissions] - [Admissions N-1], [Admissions N-1] )
+
+// ---------- Mise en forme conditionnelle (couleur des cartes KPI) ----------
+Alerte occupation =
+SWITCH (
+    TRUE (),
+    ISBLANK ( [Taux d'occupation] ), BLANK (),
+    [Taux d'occupation] >= 0.90, "#C0392B",   // saturation
+    [Taux d'occupation] >= 0.80, "#E67E22",   // tension
+    "#27AE60"
+)
