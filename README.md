@@ -1,113 +1,154 @@
-# Hôpital : KPI d'activité, pipeline qualité de données, base PostgreSQL et prévision
+<div align="center">
 
-> Le projet reproduit une problématique courante en milieu hospitalier : consolider des sources hétérogènes, fiabiliser les données, puis alimenter des tableaux de bord de pilotage. Il reprend, sur **données synthétiques** (les données réelles de l'hôpital sont confidentielles), le travail réalisé pendant mon stage.
+# Hôpital : pipeline qualité de données, KPI et prévision
 
-![Vue d'ensemble de l'activité](docs/img/01-vue-ensemble.png)
+**Trois exports hospitaliers hétérogènes → nettoyage tracé → modèle en étoile → PostgreSQL, Power BI et prévision**
 
-| Consultations | Qualité des données | Prévision |
-|---|---|---|
-| [![](docs/img/02-consultations.png)](docs/img/02-consultations.png) | [![](docs/img/03-qualite.png)](docs/img/03-qualite.png) | [![](docs/img/04-prevision.png)](docs/img/04-prevision.png) |
+[![CI](https://github.com/Emmka1412/hopital-kpi-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/Emmka1412/hopital-kpi-dashboard/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)
+![Tests](https://img.shields.io/badge/tests-37-brightgreen)
+![Données](https://img.shields.io/badge/données-synthétiques-orange)
 
-*Aperçus générés par Python (`make figures`), avec les mêmes indicateurs que les mesures DAX. Le rapport Power BI (`.pbix`) se construit à partir des tables produites en suivant [`powerbi/GUIDE.md`](powerbi/GUIDE.md) : il n'est pas encore versionné.*
+<img src="docs/img/01-vue-ensemble.png" alt="Vue d'ensemble de l'activité : KPI, admissions par mois, occupation par service" width="900">
 
-**Statut** : pipeline, base PostgreSQL, analyse et prévision terminés et testés (37 tests). Rapport Power BI : modèle, mesures DAX et guide fournis, `.pbix` à construire. Source publique SAE (DREES) : code d'ingestion fourni, fichier à télécharger ([`data/external/README.md`](data/external/README.md)).
+</div>
 
-## Ce que montrent les données (graine 42, données synthétiques)
+> Version publique de mon travail de stage à l'hôpital : les données réelles étant confidentielles, tout est reconstruit sur des **données synthétiques** avec des erreurs injectées volontairement. Ce qui est montré ici, c'est la méthode.
 
-- **Pression sur les lits :** les urgences ont le taux d'occupation le plus élevé (86,7 %), au-dessus du seuil de tension de 80 % (limite : un séjour d'un jour compte pour 1 jour-lit).
-- **Saisonnalité :** pic en décembre (indice 1,15) et creux en septembre (0,89), soit 1,29 fois plus d'activité au pic. Elle est codée dans le générateur : le résultat valide la méthode, pas un phénomène réel.
-- **Prévision à 3 mois :** la méthode saisonnière naïve corrigée de la croissance fait une erreur moyenne de 45 admissions par mois en backtest, contre 101 pour la méthode naïve. Lecture complète dans [`reports/analyse.md`](reports/analyse.md).
+## En bref
 
-## Problème
+- **Intégration** de 3 sources de formats différents (CSV, Excel à en-tête décalé, JSON imbriqué), environ 80 000 lignes brutes.
+- **Nettoyage tracé** : chaque règle est comptée, aucune ligne n'est supprimée sans trace (quarantaine avec le motif de rejet).
+- **Modèle en étoile** avec contrôles d'intégrité bloquants, chargé dans **PostgreSQL** avec clés et contraintes.
+- **Analyse** : tendance, saisonnalité, pression sur les lits, **prévision à 3 mois** validée par backtest.
+- **Qualité logicielle** : 37 tests, intégration continue GitHub Actions, Docker, reproductibilité par graine fixe.
 
-Trois systèmes exportent leurs données chacun à leur manière : formats de dates mixtes, libellés de services différents, doublons, valeurs aberrantes. Sans fiabilisation, les indicateurs d'activité (durée moyenne de séjour, taux d'occupation, absentéisme en consultation) sont faux ou non comparables.
+## Sommaire
 
-## Solution
+[Architecture](#architecture) · [Résultats](#résultats-graine-42-données-synthétiques) · [Aperçus](#aperçus) · [Lancer le projet](#lancer-le-projet) · [Base PostgreSQL](#base-postgresql) · [Indicateurs](#indicateurs) · [Structure](#structure) · [Limites](#limites-assumées) · [Avancement](#avancement)
 
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph S["Sources brutes"]
+        A["admissions.csv"]
+        B["services.xlsx"]
+        C["consultations.json"]
+    end
+    S --> N["Nettoyage<br/>clean.py"]
+    N -->|lignes rejetées| Q[("Quarantaine<br/>+ rapport qualité")]
+    N --> M["Modèle en étoile<br/>model.py"]
+    M --> K{"Contrôles<br/>d'intégrité"}
+    K --> P[("PostgreSQL<br/>clés + contraintes")]
+    K --> BI["Power BI<br/>mesures DAX"]
+    K --> F["Analyse + prévision<br/>analysis.py"]
 ```
- Sources brutes (hétérogènes)         Nettoyage et contrôle              Modèle analytique                 Restitution
- ┌──────────────────────────┐   ┌───────────────────────────────┐   ┌──────────────────────────┐   ┌─────────────────────┐
- │ admissions.csv  (CSV ;)  │   │ dédoublonnage, dates, libellés │   │ dim_service, dim_date    │   │ PostgreSQL          │
- │ services.xlsx   (Excel)  │──►│ identifiants, valeurs aberrantes│──►│ fact_admission           │──►│  (clés, contraintes,│
- │ consultations.json (JSON)│   │ quarantaine + rapport qualité  │   │ fact_consultation        │   │   requêtes SQL)     │
- └──────────────────────────┘   └───────────────────────────────┘   │ kpi_monthly_service      │   │ Power BI (DAX)      │
-                                                                     │ forecast_admissions      │   │ analyse + prévision │
-                                                                     └──────────────────────────┘   └─────────────────────┘
-```
 
-- **Intégration** de 3 sources de formats différents (CSV, Excel avec en-tête décalé, JSON imbriqué), ~80 000 lignes brutes.
-- **Nettoyage tracé** : chaque règle est comptée et journalisée ; les lignes inutilisables vont en quarantaine avec leur motif (`reports/rejected_*.csv`), jamais supprimées en silence.
-- **Modèle en étoile** (2 dimensions, 2 faits, 1 table de KPI mensuels) avec contrôles d'intégrité bloquants (clés primaires uniques, clés étrangères valides).
-- **PostgreSQL** : le même modèle est chargé dans une base qui impose elle-même clés primaires, clés étrangères, domaines de valeurs et cohérence des dates (`sql/schema.sql`), avec 7 requêtes d'analyse (`sql/analyses.sql`) et des contrôles de cohérence (`sql/checks.sql`), rejoués en CI sur une vraie base.
-- **Analyse et prévision** : tendance, indice saisonnier, pression sur les lits, prévision à 3 mois validée par un backtest à origine glissante.
-- **Reproductibilité** : données générées avec graine fixe, tout se reconstruit en une commande, tests automatisés, Docker, intégration continue GitHub Actions.
+Le principe de conception tient en une phrase : une ligne est soit **corrigée**, soit **gardée avec une valeur vide**, soit **rejetée en quarantaine avec son motif**, et chaque cas est compté dans le rapport qualité.
 
-## Résultats du nettoyage (exécution par défaut, graine 42)
+## Résultats (graine 42, données synthétiques)
 
 | Source | Lignes brutes | Doublons | Rejetées | Propres |
 |---|---:|---:|---:|---:|
 | admissions | 30 694 | 602 | 380 | 29 712 |
 | consultations | 49 423 | 730 | 0 | 48 693 |
 
-Anomalies traitées : doublons, dates de sortie antérieures à l'entrée (314), services inconnus (66), âges aberrants (151), durées de consultation négatives ou manquantes (812), dates de sortie manquantes (905). Détail complet dans [`reports/quality_report.md`](reports/quality_report.md).
+| Ce que montrent les données | Valeur |
+|---|---|
+| Occupation des urgences (la plus élevée) | **86,7 %**, au-dessus du seuil de tension de 80 % |
+| Saisonnalité | pic en décembre (indice 1,15), creux en septembre (0,89) |
+| Prévision à 3 mois, erreur de backtest | **45** admissions/mois (3,6 %) contre 101 (8,2 %) pour la méthode naïve |
+
+Détail dans [`reports/quality_report.md`](reports/quality_report.md) et [`reports/analyse.md`](reports/analyse.md). La saisonnalité est codée dans le générateur : elle valide la méthode, pas un phénomène réel.
+
+## Aperçus
+
+<table>
+<tr>
+<td width="33%"><a href="docs/img/02-consultations.png"><img src="docs/img/02-consultations.png" alt="Consultations"></a><br><sub><b>Consultations</b> : rendez-vous par statut, taux d'absence</sub></td>
+<td width="33%"><a href="docs/img/03-qualite.png"><img src="docs/img/03-qualite.png" alt="Qualité des données"></a><br><sub><b>Qualité des données</b> : anomalies et traitement</sub></td>
+<td width="33%"><a href="docs/img/04-prevision.png"><img src="docs/img/04-prevision.png" alt="Prévision"></a><br><sub><b>Prévision</b> : 3 mois, validée par backtest</sub></td>
+</tr>
+</table>
+
+*Aperçus rendus avec matplotlib (`make figures`), avec les mêmes indicateurs que les mesures DAX. Le rapport Power BI (`.pbix`) se construit avec [`powerbi/GUIDE.md`](powerbi/GUIDE.md).*
 
 ## Lancer le projet
 
 ```bash
 make install     # dépendances Python
-make all         # génère les données, exécute le pipeline, l'analyse, lance les tests
-make figures     # (re)génère les aperçus dans docs/img
-# ou, avec Docker :
-make docker-build && make docker-run
+make all         # génère les données, nettoie, analyse, lance les tests
+make figures     # régénère les aperçus dans docs/img
 ```
 
-Sorties : `data/processed/*.csv` (tables pour Power BI et PostgreSQL), `reports/quality_report.md`, `reports/analyse.md`.
+Avec Docker : `make docker-build && make docker-run`. Sorties : `data/processed/*.csv`, `reports/quality_report.md`, `reports/analyse.md`.
 
 ### Base PostgreSQL
 
 ```bash
 make db-up       # démarre PostgreSQL dans Docker
-make db-load     # crée le schéma (clés, contraintes) et charge les 6 tables (client psql requis)
+make db-load     # schéma (clés, contraintes) + chargement des 6 tables (client psql requis)
 make db-check    # contrôles de cohérence SQL
-make db-query    # exécute les 7 requêtes d'analyse
+make db-query    # 7 requêtes d'analyse
 make db-down
 ```
 
-La chaîne de connexion par défaut est `postgresql://hkpi:hkpi@localhost:5432/hopital` (variable `DATABASE_URL`).
+Connexion par défaut : `postgresql://hkpi:hkpi@localhost:5432/hopital` (variable `DATABASE_URL`). La base impose elle-même les règles du nettoyage (sexe, statut, âge entre 0 et 110, sortie après l'entrée). Le job `postgres` de la CI la recrée de zéro à chaque push.
 
 ## Indicateurs
 
 | Indicateur | Définition |
 |---|---|
 | Durée moyenne de séjour (DMS) | Moyenne de (date de sortie - date d'entrée) sur les séjours terminés |
-| Taux d'occupation | Jours-lits occupés / (lits installés x jours du mois), en rapport de sommes |
+| Taux d'occupation | Jours-lits occupés / (lits installés × jours du mois), en rapport de sommes |
 | Part d'entrées par les urgences | Admissions via les urgences / admissions |
 | Taux d'absence en consultation | Rendez-vous « absent » / rendez-vous total |
 
 ## Structure
 
 ```
-src/hkpi/      generate.py (sources synthétiques) · clean.py (règles) · model.py (étoile, KPI)
-               quality.py (rapport) · pipeline.py (orchestration + contrôles)
-               analysis.py (tendance, saisonnalité, rapport) · forecast.py (prévision, backtest)
-               figures.py (aperçus PNG) · sae.py (source publique optionnelle)
-sql/           schema.sql · load.sql · checks.sql · analyses.sql (PostgreSQL)
-tests/         37 tests (nettoyage, intégrité, KPI, reproductibilité, analyse, prévision, SAE)
-powerbi/       guide (5 pages), schéma du modèle, mesures DAX
-docs/          COMPRENDRE.md (choix techniques, questions d'entretien) · img/ (aperçus)
-data/external/ source publique SAE (à télécharger, étape optionnelle)
+src/hkpi/      generate.py · clean.py · model.py · quality.py · pipeline.py
+               analysis.py · forecast.py · figures.py · sae.py
+sql/           schema.sql · load.sql · checks.sql · analyses.sql
+tests/         37 tests (nettoyage, intégrité, KPI, analyse, prévision, SAE)
+powerbi/       guide (5 pages), mesures DAX
+docs/          COMPRENDRE.md (choix techniques, questions d'entretien) · img/
+data/external/ source publique SAE, optionnelle (à télécharger)
 ```
+
+<details>
+<summary><b>Choix techniques</b></summary>
+
+| Choix | Raison |
+|---|---|
+| Format de date explicite par motif | `02/03/2024` est ambigu (2 mars ou 3 février) : on impose `jj/mm/aaaa` plutôt que de laisser pandas deviner |
+| Quarantaine plutôt que suppression | Chaque ligne écartée est auditable et peut être renvoyée au système source |
+| Taux en rapport de sommes | La moyenne de taux donne le même poids à un service de 12 lits et à un de 36 |
+| Prévision saisonnière naïve | 24 mois ne suffisent pas à valider un modèle saisonnier complet ; on compare à une méthode naïve par backtest |
+| `\copy` pour charger PostgreSQL | Aucune dépendance Python supplémentaire, utilisable en local, Docker ou CI |
+
+Voir [`docs/COMPRENDRE.md`](docs/COMPRENDRE.md) pour le détail et les questions d'entretien.
+</details>
 
 ## Limites assumées
 
-- Premier mois sans taux d'occupation (séjours antérieurs à l'export absents).
-- Séjours sans date de sortie exclus de la DMS et de l'occupation.
-- Séjour d'un jour compté pour 1 jour-lit (surestime l'occupation des urgences).
-- Données synthétiques : les valeurs illustrent la méthode, pas une réalité clinique. En particulier, la saisonnalité retrouvée par l'analyse est celle du générateur.
-- Prévision sur 24 mois d'historique seulement : méthode volontairement simple (un modèle saisonnier complet demanderait plus de cycles).
-- Le schéma PostgreSQL et les requêtes ont été validés en local sur SQLite (contraintes, ordre des colonnes, résultats) ; l'exécution sur PostgreSQL est celle du job `postgres` de la CI.
-- Le fichier SAE n'est pas versionné et les noms de ses colonnes n'ont pas pu être vérifiés au moment de l'écriture : voir `data/external/README.md`.
+- Premier mois sans taux d'occupation ; séjours sans date de sortie exclus de la DMS et de l'occupation.
+- Un séjour d'un jour compte pour 1 jour-lit, ce qui surestime l'occupation des urgences.
+- Données synthétiques : la saisonnalité vient du générateur. Prévision sur 24 mois seulement, donc méthode volontairement simple.
+- Le schéma et les requêtes SQL ont été validés sur SQLite en local ; l'exécution sur PostgreSQL est celle du job `postgres` de la CI.
+
+## Avancement
+
+- [x] Pipeline de nettoyage et modèle en étoile, 3 sources
+- [x] Base PostgreSQL : schéma, chargement, contrôles, requêtes, CI
+- [x] Analyse de tendance et de saisonnalité, prévision avec backtest
+- [x] Aperçus du tableau de bord
+- [ ] Rapport Power BI (`.pbix`) : modèle, mesures DAX et guide fournis, à construire
+- [ ] Source publique SAE (DREES) : code d'ingestion fourni, fichier à télécharger ([`data/external/README.md`](data/external/README.md))
 
 ## Stack
 
-Python (pandas, NumPy, matplotlib, openpyxl) · pytest · PostgreSQL 16 (SQL, contraintes) · Docker / Docker Compose · GitHub Actions · Make · Power BI (DAX, modélisation en étoile)
+Python (pandas, NumPy, matplotlib, openpyxl) · pytest · PostgreSQL 16 · Docker Compose · GitHub Actions · Make · Power BI (DAX)
