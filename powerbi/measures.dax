@@ -54,3 +54,10 @@ SWITCH (
     [Taux d'occupation] >= 0.80, "#E67E22",   // tension
     "#27AE60"
 )
+
+// ---------- Prévision (table forecast_admissions, produite par `make analysis`) ----------
+Admissions historiques =
+CALCULATE ( SUM ( forecast_admissions[admissions] ), forecast_admissions[type] = "historique" )
+
+Admissions prévues =
+CALCULATE ( SUM ( forecast_admissions[admissions] ), forecast_admissions[type] = "prévision" )

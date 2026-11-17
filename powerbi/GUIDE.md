@@ -70,6 +70,18 @@ Crée une table vide `_Mesures` (Saisir des données) et colle les mesures de `m
 - Table construite à la main ou importée depuis `reports/anomalies.csv` : règle, nombre, traitement.
 - Carte : lignes brutes vs lignes propres (valeurs du `quality_report.md`).
 
+**Page 4 : Prévision** (après `make analysis`)
+
+- Importer `data/processed/forecast_admissions.csv` (colonnes `mois_debut`, `admissions`, `type`) et la relier à `dim_date[date]` (un-à-plusieurs, relation inactive si Power BI signale une ambiguïté).
+- Courbe : axe `forecast_admissions[mois_debut]`, valeurs `Admissions historiques` et `Admissions prévues` (voir `measures.dax`).
+- Zone de texte : l'interprétation de `reports/analyse.md` (saisonnalité, erreur du backtest : 45 admissions par mois contre 101 pour la méthode naïve) et la mention « données synthétiques ».
+
+**Page 5 : Contexte national** (optionnelle, après `make sae`)
+
+- Importer `data/processed/ref_soins_critiques.csv` (lits de soins critiques par département, SAE de la DREES).
+- Barres : nombre de lits par département pour la dernière année ; carte de situation pour replacer les 12 lits de réanimation de l'hôpital fictif.
+- Rappeler la source (DREES, SAE) et la licence indiquée sur la page du jeu de données.
+
 ## 5. Finitions qui font la différence
 
 - Mise en forme conditionnelle de la carte `Taux d'occupation` avec la mesure `Alerte occupation`.

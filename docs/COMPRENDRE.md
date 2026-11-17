@@ -35,9 +35,31 @@ Trois exports de systèmes différents, pleins d'erreurs, sont nettoyés par des
 **« Qu'améliorerais-tu avec plus de temps ? »** Orchestration avec Airflow ou Dagster, chargement incrémental, base PostgreSQL à la place des CSV, tests de qualité avec Great Expectations ou dbt, alertes sur dérive de qualité.
 
 
+## Ajouts : base PostgreSQL, analyse et prévision
+
+| Choix | Raison |
+|---|---|
+| Schéma PostgreSQL avec clés, `CHECK` et clés étrangères | La base impose elle-même les règles que le nettoyage garantit en Python : une ligne invalide serait refusée au chargement |
+| `\copy` plutôt qu'un pilote Python | Aucune dépendance supplémentaire, fonctionne avec une base locale, Docker ou distante, et dans la CI |
+| Colonnes décimales en `NUMERIC` | `ROUND(x, n)` n'existe pas sur les `double precision` en PostgreSQL ; `NUMERIC` évite les conversions dans chaque requête |
+| Rapport de sommes pour les taux | La moyenne de taux donne le même poids à un service de 12 lits et à un service de 36 lits |
+| Prévision saisonnière naïve plutôt que SARIMA | 24 mois ne suffisent pas pour valider un modèle saisonnier complet ; on compare à une méthode naïve par backtest |
+| Backtest à origine glissante | On rejoue le passé : à chaque origine, on prévoit les 3 mois suivants avec ce qui était connu, puis on mesure l'erreur |
+| Source SAE optionnelle, colonnes repérées par mots-clés | Le fichier réel n'a pas pu être vérifié à l'écriture ; l'erreur liste les colonnes présentes pour ajuster |
+
+**« Pourquoi PostgreSQL et pas seulement des CSV ? »** Une base impose l'intégrité (clés, domaines, dates cohérentes), permet de requêter en SQL et se branche à Power BI. Le job `postgres` de la CI recrée la base de zéro et rejoue schéma, chargement, contrôles et requêtes.
+
+**« Comment as-tu validé le schéma sans serveur PostgreSQL ? »** Le schéma a été rejoué sur SQLite avec les clés étrangères activées : les 6 tables se chargent, l'ordre des colonnes des CSV correspond à celui des tables, et trois insertions invalides (sortie avant entrée, service inconnu, âge de 150 ans) sont refusées. L'exécution sur PostgreSQL est celle de la CI.
+
+**« Ta prévision est-elle fiable ? »** Elle est validée par backtest : 45 admissions par mois d'erreur contre 101 pour la méthode naïve. Mais la saisonnalité est codée dans le générateur : cela valide la méthode, pas un phénomène réel. Sur de vraies données, on garderait le protocole et on testerait des modèles plus riches avec plus d'historique.
+
+**« Que ferais-tu avec la SAE ? »** Elle est agrégée par département : elle ne remplace pas les admissions, mais replace la capacité de l'hôpital fictif dans son contexte et permet de calibrer le référentiel de lits.
+
 ## À faire toi-même pour bien le maîtriser (environ 2 h)
 
 1. Lance `make all`, ouvre `reports/quality_report.md` et `reports/rejected_admissions.csv`.
 2. Dans `clean.py`, lis `clean_admissions` ligne par ligne et explique chaque étape à voix haute.
 3. Casse volontairement une règle (par exemple, retire le dédoublonnage), relance `make test` et observe quel test échoue.
-4. Construis le dashboard en suivant `powerbi/GUIDE.md` et prends des captures d'écran.
+4. Construis le dashboard en suivant `powerbi/GUIDE.md` (5 pages) et remplace les aperçus de `docs/img/` par tes captures Power BI.
+5. Lance `make db-up db-load db-check db-query` et lis `sql/schema.sql` : repère chaque contrainte et la règle de nettoyage qu'elle double.
+6. Lis `reports/analyse.md` et explique à voix haute le backtest.

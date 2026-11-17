@@ -7,3 +7,21 @@ services:
   tests:
     build: .
     command: ["python", "-m", "pytest", "-q"]
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: hkpi
+      POSTGRES_PASSWORD: hkpi
+      POSTGRES_DB: hopital
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hkpi -d hopital"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  pgdata: {}

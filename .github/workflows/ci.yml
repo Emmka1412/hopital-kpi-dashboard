@@ -16,9 +16,44 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Tests
         run: make test
-      - name: Pipeline complet
-        run: make data pipeline
+      - name: Pipeline complet (données, nettoyage, prévision)
+        run: make data pipeline analysis
       - uses: actions/upload-artifact@v4
         with:
-          name: rapport-qualite
-          path: reports/quality_report.md
+          name: rapports
+          path: |
+            reports/quality_report.md
+            reports/analyse.md
+
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: postgres:16
+        env:
+          POSTGRES_USER: hkpi
+          POSTGRES_PASSWORD: hkpi
+          POSTGRES_DB: hopital
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hkpi -d hopital"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://hkpi:hkpi@localhost:5432/hopital
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: make data pipeline analysis
+      - name: Schéma et chargement PostgreSQL (clés et contraintes appliquées)
+        run: make db-load
+      - name: Contrôles de cohérence SQL
+        run: make db-check
+      - name: Requêtes d'analyse
+        run: make db-query

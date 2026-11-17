@@ -4,5 +4,7 @@ __pycache__/
 .venv/
 data/raw/*
 !data/raw/.gitkeep
+data/external/*
+!data/external/.gitkeep
 reports/rejected_*.csv
 *.pbix.bak
